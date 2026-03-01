@@ -818,7 +818,7 @@ Goal::Co DerivationBuildingGoal::buildLocally(
     while (true) {
 
         unsigned int curBuilds = worker.getNrLocalBuilds();
-        if (curBuilds >= worker.settings.maxBuildJobs) {
+        if (worker.settings.maxBuildJobs != 0 && curBuilds >= worker.settings.maxBuildJobs) {
             outputLocks.unlock();
             co_await waitForBuildSlot();
             co_return tryToBuild(std::move(inputPaths));
