@@ -293,3 +293,18 @@ if isDaemonNewer "2.34pre"; then
       --no-link \
       | grepQuiet "local builds are disabled"
 fi
+
+# https://github.com/NixOS/nix/issues/15368
+# When max-jobs=0 and a substituter has the derivation, the build
+# should succeed by substituting from the cache (not fail with
+# "Unable to start any build").
+if isDaemonNewer "2.34pre"; then
+    needLocalStore "'--no-require-sigs' can't be used with the daemon"
+    clearCache
+    maxjobsExpr='derivation { name = "test-maxjobs-subst"; builder = "/bin/sh"; args = ["-c" "echo hi > $out"]; system = builtins.currentSystem; }'
+    outPath=$(nix build --impure --no-link --print-out-paths --expr "$maxjobsExpr")
+    nix copy --to "file://$cacheDir" "$outPath"
+    nix store delete --ignore-liveness "$outPath"
+    nix build --impure --no-link --max-jobs 0 \
+      --substituters "file://$cacheDir" --no-require-sigs --expr "$maxjobsExpr"
+fi

@@ -1,0 +1,49 @@
+From 7cace2df27875fab5d31c77088de4e660aaf507c Mon Sep 17 00:00:00 2001
+From: "copilot-swe-agent[bot]" <198982749+Copilot@users.noreply.github.com>
+Date: Sun, 1 Mar 2026 16:26:54 +0000
+Subject: [PATCH] Backport fix for issue #15368 to Nix 2.31.2
+
+---
+ src/libstore/build/derivation-building-goal.cc |  2 +-
+ tests/functional/build.sh                      | 15 +++++++++++++++
+ 2 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/src/libstore/build/derivation-building-goal.cc b/src/libstore/build/derivation-building-goal.cc
+index a82f7f9..a309b92 100644
+--- a/src/libstore/build/derivation-building-goal.cc
++++ b/src/libstore/build/derivation-building-goal.cc
+@@ -610,7 +610,7 @@ Goal::Co DerivationBuildingGoal::tryToBuild()
+         assert(!hook);
+ 
+         unsigned int curBuilds = worker.getNrLocalBuilds();
+-        if (curBuilds >= settings.maxBuildJobs) {
++        if (settings.maxBuildJobs != 0 && curBuilds >= settings.maxBuildJobs) {
+             outputLocks.unlock();
+             co_await waitForBuildSlot();
+             co_return tryToBuild();
+diff --git a/tests/functional/build.sh b/tests/functional/build.sh
+index 0a19ff7..15bc954 100755
+--- a/tests/functional/build.sh
++++ b/tests/functional/build.sh
+@@ -199,3 +199,18 @@ else
+ fi
+ <<<"$out" grepQuiet -vE "hash mismatch in fixed-output derivation '.*-x3\\.drv'"
+ <<<"$out" grepQuiet -vE "hash mismatch in fixed-output derivation '.*-x2\\.drv'"
++
++# https://github.com/NixOS/nix/issues/15368
++# When max-jobs=0 and a substituter has the derivation, the build
++# should succeed by substituting from the cache (not fail with
++# "Unable to start any build").
++if isDaemonNewer "2.31.2"; then
++    needLocalStore "'--no-require-sigs' can't be used with the daemon"
++    clearCache
++    maxjobsExpr='derivation { name = "test-maxjobs-subst"; builder = "/bin/sh"; args = ["-c" "echo hi > $out"]; system = builtins.currentSystem; }'
++    outPath=$(nix build --impure --no-link --print-out-paths --expr "$maxjobsExpr")
++    nix copy --to "file://$cacheDir" "$outPath"
++    nix-store --delete "$outPath"
++    nix build --impure --no-link --max-jobs 0 \
++      --substituters "file://$cacheDir" --no-require-sigs --expr "$maxjobsExpr"
++fi
+-- 
+2.53.0
+
